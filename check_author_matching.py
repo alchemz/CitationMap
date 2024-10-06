@@ -25,9 +25,28 @@ def count_non_empty(s):
     return len([x for x in s.split(', ') if x.strip() != '' and x.strip() != 'NA'])
 
 def check_author_matching(input_file):
-    # Read the CSV file
-    df = pd.read_csv(input_file)
-    
+    # Try different parsing options
+    try:
+        # First attempt: standard CSV reading
+        df = pd.read_csv(input_file)
+    except pd.errors.ParserError:
+        try:
+            # Second attempt: read with quoted fields
+            df = pd.read_csv(input_file, quoting=csv.QUOTE_ALL)
+        except pd.errors.ParserError:
+            try:
+                # Third attempt: read with different delimiter
+                df = pd.read_csv(input_file, sep='\t')  # Try tab as delimiter
+            except pd.errors.ParserError:
+                # If all attempts fail, read the file manually
+                with open(input_file, 'r', encoding='utf-8') as file:
+                    lines = file.readlines()
+                    # Print the problematic line and surrounding lines
+                    print("Problematic lines:")
+                    for i in range(max(0, 1), min(len(lines), 5)):  # Print lines 1-5
+                        print(f"Line {i + 1}: {lines[i].strip()}")
+                raise ValueError(f"Unable to parse the CSV file: {input_file}")
+
     # Apply the function to both columns
     df['author_count'] = df['citing_authors'].apply(lambda x: len(str(x).split(', ')) if pd.notna(x) else 0)
     df['id_count'] = df['citing_author_id'].apply(count_non_empty)
@@ -80,20 +99,24 @@ def check_author_matching(input_file):
     total_rows = len(df)
     matched_rows = (df['match_status'] == 'matched').sum()
     unmatched_rows = total_rows - matched_rows
-    print(f"\nSummary:")
+    print(f"\nSummary for {os.path.basename(input_file)}:")
     print(f"Total rows: {total_rows}")
     print(f"Matched rows: {matched_rows}")
     print(f"Unmatched rows: {unmatched_rows}")
 
 def main():
-    # Replace this with the path to your CSV file
-    input_file = "/Users/lilyzhang/Desktop/Demo/CitationMap/citations_ZYvXHYwAAAAJ/citations_Deflating_dataset_bias.csv"
+    input_folder = "/Users/lilyzhang/Desktop/Demo/CitationMap/citations_la-Mx-UAAAAJ"
     
-    if not os.path.exists(input_file):
-        print(f"Error: File {input_file} not found.")
+    if not os.path.exists(input_folder):
+        print(f"Error: Folder {input_folder} not found.")
         return
 
-    check_author_matching(input_file)
+    csv_files = [f for f in os.listdir(input_folder) if f.endswith('.csv') and not f.endswith('_checked_with_ids.csv')]
+
+    for csv_file in csv_files:
+        input_file = os.path.join(input_folder, csv_file)
+        print(f"\nProcessing file: {csv_file}")
+        check_author_matching(input_file)
 
 if __name__ == "__main__":
     main()
