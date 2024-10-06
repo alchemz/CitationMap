@@ -16,14 +16,14 @@ from scholarly import scholarly, ProxyGenerator
 from tqdm import tqdm
 from typing import Any, Iterable, List, Tuple
 
-from .scholarly_support import get_citing_author_ids_and_citing_papers, get_organization_name
-
+from citation_map.scholarly_support import get_citing_author_ids_and_citing_papers, get_organization_name
 
 def find_all_citing_authors(scholar_id: str, num_processes: int = 16) -> List[Tuple[str]]:
     '''
     Step 1. Find all publications of the given Google Scholar ID.
     Step 2. Find all citing authors.
     '''
+
     # Find Google Scholar Profile using Scholar ID.
     author = scholarly.search_author_id(scholar_id)
     author = scholarly.fill(author, sections=['publications'])
@@ -65,6 +65,9 @@ def find_all_citing_authors(scholar_id: str, num_processes: int = 16) -> List[Tu
                         total=len(all_publication_info)):
             all_citing_author_paper_info_nested.append(__citing_authors_and_papers_from_publication(pub))
     all_citing_author_paper_tuple_list = list(itertools.chain(*all_citing_author_paper_info_nested))
+
+    print("number of citing authors and papers: ", len(all_citing_author_paper_tuple_list))
+    print(all_citing_author_paper_tuple_list[0])
     return all_citing_author_paper_tuple_list
 
 def find_all_citing_affiliations(all_citing_author_paper_tuple_list: List[Tuple[str]],
@@ -78,21 +81,21 @@ def find_all_citing_affiliations(all_citing_author_paper_tuple_list: List[Tuple[
     else:
         __affiliations_from_authors = __affiliations_from_authors_aggressive
 
-    # Find all citing insitutions from all citing authors.
+    # Find all citing institutions from all citing authors.
     if num_processes > 1 and isinstance(num_processes, int):
         with Pool(processes=num_processes) as pool:
             author_paper_affiliation_tuple_list = list(tqdm(pool.imap(__affiliations_from_authors, all_citing_author_paper_tuple_list),
-                                                            desc='Finding citing affiliations from %d citing authors' % len(all_citing_author_paper_tuple_list),
+                                                            desc='Finding citing affiliations from %d citing papers' % len(all_citing_author_paper_tuple_list),
                                                             total=len(all_citing_author_paper_tuple_list)))
     else:
         author_paper_affiliation_tuple_list = []
         for author_and_paper in tqdm(all_citing_author_paper_tuple_list,
-                                     desc='Finding citing affiliations from %d citing authors' % len(all_citing_author_paper_tuple_list),
+                                     desc='Finding citing affiliations from %d citing papers' % len(all_citing_author_paper_tuple_list),
                                      total=len(all_citing_author_paper_tuple_list)):
             author_paper_affiliation_tuple_list.append(__affiliations_from_authors(author_and_paper))
 
-    # Filter empty items.
-    author_paper_affiliation_tuple_list = [item for item in author_paper_affiliation_tuple_list if item]
+    # Filter empty items and flatten the list.
+    author_paper_affiliation_tuple_list = [item for sublist in author_paper_affiliation_tuple_list if sublist for item in sublist]
     return author_paper_affiliation_tuple_list
 
 def clean_affiliation_names(author_paper_affiliation_tuple_list: List[Tuple[str]]) -> List[Tuple[str]]:
@@ -228,7 +231,7 @@ def export_csv(coordinates_and_info: List[Tuple[str]], csv_output_path: str) -> 
                                         'affiliation', 'latitude', 'longitude',
                                         'county', 'city', 'state', 'country'])
 
-    citation_df.to_csv(csv_output_path)
+    citation_df.to_csv(csv_output_path, index=False)
     return
 
 def __fill_publication_metadata(pub):
@@ -240,40 +243,43 @@ def __citing_authors_and_papers_from_publication(cites_id_and_cited_paper: Tuple
     citing_paper_search_url = 'https://scholar.google.com/scholar?hl=en&cites=' + cites_id
     citing_authors_and_citing_papers = get_citing_author_ids_and_citing_papers(citing_paper_search_url)
     citing_author_paper_info = []
-    for citing_author_id, citing_paper_title in citing_authors_and_citing_papers:
-        citing_author_paper_info.append((citing_author_id, citing_paper_title, cited_paper_title))
+    for citing_author_ids, citing_paper_title in citing_authors_and_citing_papers:
+        citing_author_paper_info.append((citing_author_ids, citing_paper_title, cited_paper_title))
     return citing_author_paper_info
 
-def __affiliations_from_authors_conservative(citing_author_paper_info: str):
+def __affiliations_from_authors_conservative(citing_author_paper_info: Tuple[List[str], str, str]):
     '''
     Conservative: only use Google Scholar verified organization.
     This will have higher precision and lower recall.
     '''
-    citing_author_id, citing_paper_title, cited_paper_title = citing_author_paper_info
-    time.sleep(random.uniform(1, 5))  # Random delay to reduce risk of being blocked.
-    citing_author = scholarly.search_author_id(citing_author_id)
+    citing_author_ids, citing_paper_title, cited_paper_title = citing_author_paper_info
+    affiliations = []
+    for citing_author_id in citing_author_ids:
+        time.sleep(random.uniform(1, 5))  # Random delay to reduce risk of being blocked.
+        citing_author = scholarly.search_author_id(citing_author_id)
 
-    if 'organization' in citing_author:
-        author_name = citing_author['name']
-        try:
-            author_organization = get_organization_name(citing_author['organization'])
-            return (author_name, citing_paper_title, cited_paper_title, author_organization)
-        except Exception as e:
-            print('[Warning!]', e)
-            return None
-    return None
+        if 'organization' in citing_author:
+            author_name = citing_author['name']
+            try:
+                author_organization = get_organization_name(citing_author['organization'])
+                affiliations.append((author_name, citing_paper_title, cited_paper_title, author_organization))
+            except Exception as e:
+                print('[Warning!]', e)
+    return affiliations
 
-def __affiliations_from_authors_aggressive(citing_author_paper_info: str):
+def __affiliations_from_authors_aggressive(citing_author_paper_info: Tuple[List[str], str, str]):
     '''
     Aggressive: use the self-reported affiliation string from the Google Scholar affiliation panel.
     This will have lower precision and higher recall.
     '''
-    citing_author_id, citing_paper_title, cited_paper_title = citing_author_paper_info
-    time.sleep(random.uniform(1, 5))  # Random delay to reduce risk of being blocked.
-    citing_author = scholarly.search_author_id(citing_author_id)
-    if 'affiliation' in citing_author:
-        return (citing_author['name'], citing_paper_title, cited_paper_title, citing_author['affiliation'])
-    return None
+    citing_author_ids, citing_paper_title, cited_paper_title = citing_author_paper_info
+    affiliations = []
+    for citing_author_id in citing_author_ids:
+        time.sleep(random.uniform(1, 5))  # Random delay to reduce risk of being blocked.
+        citing_author = scholarly.search_author_id(citing_author_id)
+        if 'affiliation' in citing_author:
+            affiliations.append((citing_author['name'], citing_paper_title, cited_paper_title, citing_author['affiliation']))
+    return affiliations
 
 def __country_aware_comma_split(string_list: List[str]) -> List[str]:
     comma_split_list = []
@@ -330,7 +336,7 @@ def generate_citation_map(scholar_id: str,
                           output_path: str = 'citation_map.html',
                           csv_output_path: str = 'citation_info.csv',
                           cache_folder: str = 'cache',
-                          affiliation_conservative: bool = False,
+                          affiliation_conservative: bool = True,
                           num_processes: int = 16,
                           use_proxy: bool = False,
                           pin_colorful: bool = True,
@@ -406,6 +412,7 @@ def generate_citation_map(scholar_id: str,
         print('A total of %d citing authors loaded.\n' % len(all_citing_author_paper_tuple_list))
 
     # NOTE: Step 2. Find all citing affiliations.
+    affiliation_conservative = True
     print('Identifying affiliations using the %s approach.' % ('conservative' if affiliation_conservative else 'aggressive'))
     author_paper_affiliation_tuple_list = find_all_citing_affiliations(all_citing_author_paper_tuple_list,
                                                                        num_processes=num_processes,
