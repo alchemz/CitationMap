@@ -14,8 +14,9 @@ from citation_map.citation_map import generate_citation_map
 
 if __name__ == '__main__':
     scholar_id = 'la-Mx-UAAAAJ'
-    v2_cache_path = '/Users/lilyzhang/Desktop/Demo/citations_la-Mx-UAAAAJ/citations_SIMBAR:_Single_Image-Based_Scene_Relighting_For_Ef.csv'
-    
+    # v2_cache_path = '/Users/lilyzhang/Desktop/Demo/citations_la-Mx-UAAAAJ/citations_SIMBAR:_Single_Image-Based_Scene_Relighting_For_Ef.csv'
+    # v2_cache_path = '/Users/lilyzhang/Desktop/Demo/CitationMap/citations_la-Mx-UAAAAJ/citations_Neural network image processing.csv'
+    v2_cache_path = '/Users/lilyzhang/Desktop/Demo/CitationMap/citations_la-Mx-UAAAAJ/citations_Enhanced_vehicle_operation.csv'
     generate_citation_map(scholar_id, output_path='citation_map.html',
                           cache_folder='cache', affiliation_conservative=False, num_processes=16,
                           use_proxy=False, pin_colorful=True, print_citing_affiliations=True,
