@@ -233,9 +233,9 @@ def create_map(coordinates_and_info: List[Tuple[str]], pin_colorful: bool = True
             folium.Marker([lat, lon], popup='%s (%s)' % (affiliation_name, ' & '.join(author_name_list))).add_to(citation_map)
     return citation_map
 
-def export_csv(coordinates_and_info: List[Tuple[str]], csv_output_path: str, all_citing_author_paper_tuple_list: List[Tuple[str]]) -> None:
+def export_csv(coordinates_and_info: List[Tuple[str]], csv_output_path: str) -> None:
     '''
-    Step 5.2: Export csv files recording citation information.
+    Step 5.2: Export csv file recording citation information.
     '''
 
     # Create DataFrame for authors with retrieved organization information
@@ -245,38 +245,14 @@ def export_csv(coordinates_and_info: List[Tuple[str]], csv_output_path: str, all
                                         'county', 'city', 'state', 'country'])
 
     citation_df.to_csv(csv_output_path, index=False)
-    print(f'\nCitation information for authors with retrieved organizations exported to {csv_output_path}')
+    print(f'\nCitation information exported to {csv_output_path}')
 
-    # Create DataFrame for all authors, including those without retrieved organization information
-    all_authors_df = pd.DataFrame(all_citing_author_paper_tuple_list,
-                                  columns=['citing_author_id', 'citing paper title', 'cited paper title'])
-    
-    # Explode the 'citing_author_id' column to create one row per author
-    all_authors_df = all_authors_df.explode('citing_author_id')
-
-    # Merge with the citation_df to add organization information where available
-    merged_df = pd.merge(all_authors_df, citation_df, 
-                         left_on=['citing_author_id', 'citing paper title', 'cited paper title'],
-                         right_on=['citing author name', 'citing paper title', 'cited paper title'],
-                         how='left')
-
-    # Fill NaN values with 'NA' for organization-related columns
-    org_columns = ['affiliation', 'latitude', 'longitude', 'county', 'city', 'state', 'country']
-    merged_df[org_columns] = merged_df[org_columns].fillna('NA')
-
-    # Rename 'citing_author_id' to 'author_name' if it's not already present
-    if 'author_name' not in merged_df.columns:
-        merged_df = merged_df.rename(columns={'citing_author_id': 'author_name'})
-
-    # Reorder columns
-    columns = ['author_name', 'citing paper title', 'cited paper title', 'affiliation', 
-               'latitude', 'longitude', 'county', 'city', 'state', 'country']
-    merged_df = merged_df[columns]
-
-    # Save the merged DataFrame to a new CSV file
-    all_authors_csv_path = csv_output_path.replace('.csv', '_all_authors.csv')
-    merged_df.to_csv(all_authors_csv_path, index=False)
-    print(f'Citation information for all authors exported to {all_authors_csv_path}')
+    # Print some statistics
+    total_authors = len(citation_df)
+    authors_with_affiliation = (citation_df['affiliation'] != 'NA').sum()
+    print(f"Total authors: {total_authors}")
+    print(f"Authors with affiliation: {authors_with_affiliation}")
+    print(f"Percentage of authors with affiliation: {authors_with_affiliation / total_authors * 100:.2f}%")
 
 def __fill_publication_metadata(pub):
     time.sleep(random.uniform(10, 15))  # Increased delay
@@ -643,7 +619,7 @@ def generate_citation_map(scholar_id: str,
     print(f'Citation map saved to {output_path}.\n')
 
     print('Exporting citation information to CSV.\n')
-    export_csv(coordinates_and_info, csv_output_path, all_citing_author_paper_tuple_list)
+    export_csv(coordinates_and_info, csv_output_path)
     print(f'Citation information exported to {csv_output_path}.\n')
 
     print('Done!')
