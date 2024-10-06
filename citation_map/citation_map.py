@@ -10,6 +10,7 @@ import re
 import random
 import time
 import csv
+import math
 
 from geopy.geocoders import Nominatim
 from multiprocessing import Pool
@@ -81,7 +82,7 @@ def find_all_citing_authors(scholar_id: str, num_processes: int = 16) -> List[Tu
         print("No citing authors found.")
     return all_citing_author_paper_tuple_list
 
-def find_all_citing_affiliations(all_citing_author_paper_tuple_list: List[Tuple[str, str, str, str]],
+def find_all_citing_affiliations(all_citing_author_paper_tuple_list: List[Tuple[str]],
                                  num_processes: int = 16,
                                  affiliation_conservative: bool = False):
     '''
@@ -376,10 +377,24 @@ def __affiliations_from_authors_aggressive(citing_author_paper_info: Tuple[List[
     affiliations = []
     if isinstance(citing_author_ids, str):
         citing_author_ids = [citing_author_ids]
-    for citing_author_id, citing_author_name in zip(citing_author_ids, citing_author_names.split(', ')):
-        if citing_author_id.lower() == 'na':
-            print(f"Skipping author ID: NA")
+    
+    # Convert citing_author_names to string if it's not already
+    if not isinstance(citing_author_names, str):
+        citing_author_names = str(citing_author_names)
+    
+    # Split citing_author_names, handling the case where it might be a single name
+    author_names = citing_author_names.split(', ') if ', ' in citing_author_names else [citing_author_names]
+    
+    for citing_author_id, citing_author_name in zip(citing_author_ids, author_names):
+        if isinstance(citing_author_id, float):
+            if math.isnan(citing_author_id):
+                print(f"Skipping author ID: NaN")
+                continue
+            citing_author_id = str(int(citing_author_id))
+        elif citing_author_id is None or str(citing_author_id).lower() == 'na' or str(citing_author_id).lower() == 'nan':
+            print(f"Skipping author ID: {citing_author_id}")
             continue
+        
         max_retries = 3
         for attempt in range(max_retries):
             try:
@@ -509,7 +524,9 @@ def generate_citation_map(scholar_id: str,
                           print_citing_affiliations: bool = True,
                           use_v2_cache: bool = False,
                           v2_cache_path: str = None,
-                          has_author_names: bool = False):
+                          has_author_names: bool = False,
+                          use_flattened_authors: bool = False,
+                          flattened_authors_path: str = None):
     '''
     Google Scholar Citation World Map.
 
@@ -555,6 +572,12 @@ def generate_citation_map(scholar_id: str,
     has_author_names: bool
         (default is False)
         If true, the v2 cache file contains author names.
+    use_flattened_authors: bool
+        (default is False)
+        If true, use the flattened authors file.
+    flattened_authors_path: str
+        (default is None)
+        The path to the flattened authors file.
     '''
 
     if use_proxy:
@@ -563,26 +586,67 @@ def generate_citation_map(scholar_id: str,
         scholarly.use_proxy(pg)
         print('Using proxy.')
 
-    if cache_folder is not None:
-        cache_path = os.path.join(cache_folder, scholar_id, 'all_citing_author_paper_tuple_list.csv')
-    else:
-        cache_path = None
-
-    if use_v2_cache and v2_cache_path:
+    if use_flattened_authors and flattened_authors_path:
+        print('Loading data from flattened authors file.\n')
+        df = pd.read_csv(flattened_authors_path)
+        all_citing_author_paper_tuple_list = []
+        for _, row in df.iterrows():
+            author_id = row['citing_author_id']
+            citing_paper_title = row['citing_paper']
+            cited_paper_title = row['source_paper']  # Changed from 'source_title' to 'source_paper'
+            author_name = row['citing_author_name']
+            all_citing_author_paper_tuple_list.append(([author_id], citing_paper_title, cited_paper_title, author_name))
+        print(f'Loaded from flattened authors file: {flattened_authors_path}.\n')
+        print(f'A total of {len(all_citing_author_paper_tuple_list)} citing authors loaded.\n')
+    elif use_v2_cache and v2_cache_path:
         print('Loading data from v2 cache.\n')
         all_citing_author_paper_tuple_list = load_cache_v2(v2_cache_path)
         print(f'Loaded from v2 cache: {v2_cache_path}.\n')
         print(f'A total of {len(all_citing_author_paper_tuple_list)} citing authors loaded.\n')
-    
-    # ... (rest of the function remains the same)
+    else:
+        if cache_folder is not None:
+            cache_path = os.path.join(cache_folder, scholar_id, 'all_citing_author_paper_tuple_list.csv')
+        else:
+            cache_path = None
 
-    # Modify the find_all_citing_affiliations function call
+        if cache_path and os.path.exists(cache_path):
+            print('Loading data from cache.\n')
+            all_citing_author_paper_tuple_list = load_cache(cache_path)
+            print(f'Loaded from cache: {cache_path}.\n')
+        else:
+            print('Finding all citing authors.\n')
+            all_citing_author_paper_tuple_list = find_all_citing_authors(scholar_id, num_processes=num_processes)
+            if cache_path:
+                save_cache(all_citing_author_paper_tuple_list, cache_path)
+                print(f'Saved to cache: {cache_path}.\n')
+
+    print(f'A total of {len(all_citing_author_paper_tuple_list)} citing authors found.\n')
+
     author_paper_affiliation_tuple_list = find_all_citing_affiliations(all_citing_author_paper_tuple_list,
                                                                        num_processes=num_processes,
                                                                        affiliation_conservative=affiliation_conservative)
 
-    # ... (rest of the function remains the same)
+    print(f'A total of {len(author_paper_affiliation_tuple_list)} citing affiliations found.\n')
 
+    if print_citing_affiliations:
+        __print_author_and_affiliation(author_paper_affiliation_tuple_list)
+
+    print('Cleaning up affiliation names.\n')
+    author_paper_affiliation_tuple_list = clean_affiliation_names(author_paper_affiliation_tuple_list)
+
+    print('Converting affiliations to geocodes.\n')
+    coordinates_and_info = affiliation_text_to_geocode(author_paper_affiliation_tuple_list)
+
+    print('Creating the citation map.\n')
+    citation_map = create_map(coordinates_and_info, pin_colorful=pin_colorful)
+    citation_map.save(output_path)
+    print(f'Citation map saved to {output_path}.\n')
+
+    print('Exporting citation information to CSV.\n')
+    export_csv(coordinates_and_info, csv_output_path, all_citing_author_paper_tuple_list)
+    print(f'Citation information exported to {csv_output_path}.\n')
+
+    print('Done!')
 
 if __name__ == '__main__':
     # Replace this with your Google Scholar ID.
@@ -590,4 +654,5 @@ if __name__ == '__main__':
     generate_citation_map(scholar_id, output_path='citation_map.html', csv_output_path='citation_info.csv',
                           cache_folder='cache', affiliation_conservative=True, num_processes=16,
                           use_proxy=False, pin_colorful=True, print_citing_affiliations=True,
-                          use_v2_cache=False, v2_cache_path=None, has_author_names=False)
+                          use_v2_cache=False, v2_cache_path=None, has_author_names=False,
+                          use_flattened_authors=False, flattened_authors_path=None)
