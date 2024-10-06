@@ -240,7 +240,7 @@ def export_csv(coordinates_and_info: List[Tuple[str]], csv_output_path: str) -> 
 
     # Create DataFrame for authors with retrieved organization information
     citation_df = pd.DataFrame(coordinates_and_info,
-                               columns=['citing author name', 'citing paper title', 'cited paper title',
+                               columns=['citing_author_name', 'citing_paper', 'source_paper',
                                         'affiliation', 'latitude', 'longitude',
                                         'county', 'city', 'state', 'country'])
 
