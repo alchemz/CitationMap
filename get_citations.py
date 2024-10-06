@@ -7,7 +7,7 @@ import os
 import re
 
 # Replace with your ScraperAPI key
-SCRAPER_API_KEY = '78958c46d9c2b2d8729d25bbb48b7706'
+SCRAPER_API_KEY = ''
 
 def format_author_name(author):
     parts = author.split(', ')
