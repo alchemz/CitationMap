@@ -22,9 +22,9 @@ def format_author_list(authors):
 def get_citations_for_author(author_id):
     print(f"Retrieving citations for author ID: {author_id}")
     
-    # pg = ProxyGenerator()
-    # pg.ScraperAPI(SCRAPER_API_KEY)
-    # scholarly.use_proxy(pg)
+    pg = ProxyGenerator()
+    pg.ScraperAPI(SCRAPER_API_KEY)
+    scholarly.use_proxy(pg)
     
     try:
         author = scholarly.search_author_id(author_id)
@@ -96,7 +96,9 @@ def save_citations_to_csv(pub_title, citations, output_filename):
     print(f"Citation data for '{pub_title}' has been saved to {output_filename}")
 
 def main():
-    author_id = "la-Mx-UAAAAJ"  # Replace with the desired author ID
+    # author_id = "la-Mx-UAAAAJ"  # Replace with the desired author ID
+    # author_id = "ifybhH8AAAAJ" 
+    author_id = 'ZYvXHYwAAAAJ'
     
     print("Starting citation retrieval...")
     author_name, all_citations = get_citations_for_author(author_id)
