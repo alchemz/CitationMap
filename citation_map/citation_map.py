@@ -9,6 +9,7 @@ import pycountry
 import re
 import random
 import time
+import csv
 
 from geopy.geocoders import Nominatim
 from multiprocessing import Pool
@@ -47,10 +48,17 @@ def find_all_citing_authors(scholar_id: str, num_processes: int = 16) -> List[Tu
     # This is fast and no parallel processing is needed.
     all_publication_info = []
     for pub in all_publications:
+        pub_title = pub['bib']['title']
         if 'cites_id' in pub:
             for cites_id in pub['cites_id']:
-                pub_title = pub['bib']['title']
                 all_publication_info.append((cites_id, pub_title))
+        else:
+            # Include papers without cite IDs
+            all_publication_info.append((None, pub_title))
+        
+        print(f"Publication: {pub['bib']['title']}")
+        print(f"Number of citations: {pub['num_citations']}")
+        print(f"Number of cites_id: {len(pub.get('cites_id', []))}")
 
     # Find all citing authors from all publications.
     if num_processes > 1 and isinstance(num_processes, int):
@@ -67,7 +75,10 @@ def find_all_citing_authors(scholar_id: str, num_processes: int = 16) -> List[Tu
     all_citing_author_paper_tuple_list = list(itertools.chain(*all_citing_author_paper_info_nested))
 
     print("number of citing authors and papers: ", len(all_citing_author_paper_tuple_list))
-    print(all_citing_author_paper_tuple_list[0])
+    if all_citing_author_paper_tuple_list:
+        print(all_citing_author_paper_tuple_list[0])
+    else:
+        print("No citing authors found.")
     return all_citing_author_paper_tuple_list
 
 def find_all_citing_affiliations(all_citing_author_paper_tuple_list: List[Tuple[str]],
@@ -235,50 +246,135 @@ def export_csv(coordinates_and_info: List[Tuple[str]], csv_output_path: str) -> 
     return
 
 def __fill_publication_metadata(pub):
-    time.sleep(random.uniform(1, 5))  # Random delay to reduce risk of being blocked.
-    return scholarly.fill(pub)
+    time.sleep(random.uniform(10, 15))  # Increased delay
+    try:
+        filled_pub = scholarly.fill(pub)
+        print(f"Title: {filled_pub['bib']['title']}")
+        print(f"Reported citations: {filled_pub['num_citations']}")
+        if 'cites_id' in filled_pub:
+            print(f"Number of cites_id: {len(filled_pub['cites_id'])}")
+        else:
+            print("No cites_id found")
+        return filled_pub
+    except Exception as e:
+        print(f"Error filling publication metadata: {e}")
+        return pub
 
 def __citing_authors_and_papers_from_publication(cites_id_and_cited_paper: Tuple[str, str]):
-    cites_id, cited_paper_title = cites_id_and_cited_paper
-    citing_paper_search_url = 'https://scholar.google.com/scholar?hl=en&cites=' + cites_id
-    citing_authors_and_citing_papers = get_citing_author_ids_and_citing_papers(citing_paper_search_url)
-    citing_author_paper_info = []
-    for citing_author_ids, citing_paper_title in citing_authors_and_citing_papers:
-        citing_author_paper_info.append((citing_author_ids, citing_paper_title, cited_paper_title))
-    return citing_author_paper_info
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            cites_id, cited_paper_title = cites_id_and_cited_paper
+            if cites_id is None:
+                # For papers without cite IDs, return an empty list of citing authors
+                return [([], "", cited_paper_title)]
+            citing_paper_search_url = 'https://scholar.google.com/scholar?hl=en&cites=' + cites_id
+            print(f"\n\n####Citing paper search URL: {citing_paper_search_url}")
+            citing_authors_and_citing_papers = get_citing_author_ids_and_citing_papers(citing_paper_search_url)
+            citing_author_paper_info = []
+            for citing_author_ids, citing_paper_title in citing_authors_and_citing_papers:
+                # If citing_author_ids is a string, wrap it in a list
+                if isinstance(citing_author_ids, str):
+                    citing_author_ids = [citing_author_ids]
+                citing_author_paper_info.append((citing_author_ids, citing_paper_title, cited_paper_title))
+            return citing_author_paper_info
+        except Exception as e:
+            print(f"Error on attempt {attempt + 1}: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(random.uniform(10, 15))
+            else:
+                print(f"Failed after {max_retries} attempts")
+    return []
 
 def __affiliations_from_authors_conservative(citing_author_paper_info: Tuple[List[str], str, str]):
-    '''
-    Conservative: only use Google Scholar verified organization.
-    This will have higher precision and lower recall.
-    '''
+    print("citing_author_paper_info", citing_author_paper_info)
     citing_author_ids, citing_paper_title, cited_paper_title = citing_author_paper_info
     affiliations = []
+    if isinstance(citing_author_ids, str):
+        citing_author_ids = [citing_author_ids]
     for citing_author_id in citing_author_ids:
-        time.sleep(random.uniform(1, 5))  # Random delay to reduce risk of being blocked.
-        citing_author = scholarly.search_author_id(citing_author_id)
-
-        if 'organization' in citing_author:
-            author_name = citing_author['name']
+        max_retries = 3
+        for attempt in range(max_retries):
             try:
-                author_organization = get_organization_name(citing_author['organization'])
-                affiliations.append((author_name, citing_paper_title, cited_paper_title, author_organization))
+                time.sleep(random.uniform(5, 10))  # Increased delay
+                print(f"Searching for author with ID: {citing_author_id}")
+                citing_author = scholarly.search_author_id(citing_author_id)
+                if citing_author is None:
+                    print(f"[Warning!] Author with ID {citing_author_id} not found on attempt {attempt + 1}.")
+                    if attempt == max_retries - 1:
+                        print(f"[Error] Failed to find author with ID {citing_author_id} after {max_retries} attempts.")
+                    continue
+                
+                print(f"Author found: {citing_author.get('name', 'Name not available')}")
+                author_name = citing_author.get('name', 'Name not available')
+                
+                if 'organization' in citing_author:
+                    try:
+                        author_organization = get_organization_name(citing_author['organization'])
+                        affiliations.append((author_name, citing_paper_title, cited_paper_title, author_organization))
+                    except Exception as e:
+                        print(f'[Warning!] Error processing organization for author {author_name}: {e}')
+                else:
+                    print(f"No organization information found for author {author_name}")
+                    if 'affiliation' in citing_author:
+                        affiliation_parts = citing_author['affiliation'].split(',')
+                        if len(affiliation_parts) > 1:
+                            author_organization = affiliation_parts[-1].strip()
+                        else:
+                            author_organization = citing_author['affiliation'].strip()
+                        print(f"Extracted organization: {author_organization}")
+                        affiliations.append((author_name, citing_paper_title, cited_paper_title, author_organization))
+                    else:
+                        print(f"No affiliation information found for author {author_name}")
+                
+                break  # Successfully processed this author, move to the next
             except Exception as e:
-                print('[Warning!]', e)
+                print(f'[Warning!] Error searching for author with ID {citing_author_id} on attempt {attempt + 1}: {e}')
+                print(f'Exception type: {type(e).__name__}')
+                print(f'Exception args: {e.args}')
+                if attempt == max_retries - 1:
+                    print(f"[Error] Failed to process author with ID {citing_author_id} after {max_retries} attempts.")
     return affiliations
 
 def __affiliations_from_authors_aggressive(citing_author_paper_info: Tuple[List[str], str, str]):
-    '''
-    Aggressive: use the self-reported affiliation string from the Google Scholar affiliation panel.
-    This will have lower precision and higher recall.
-    '''
     citing_author_ids, citing_paper_title, cited_paper_title = citing_author_paper_info
     affiliations = []
+    if isinstance(citing_author_ids, str):
+        citing_author_ids = [citing_author_ids]
     for citing_author_id in citing_author_ids:
-        time.sleep(random.uniform(1, 5))  # Random delay to reduce risk of being blocked.
-        citing_author = scholarly.search_author_id(citing_author_id)
-        if 'affiliation' in citing_author:
-            affiliations.append((citing_author['name'], citing_paper_title, cited_paper_title, citing_author['affiliation']))
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                time.sleep(random.uniform(5, 10))  # Increased delay
+                print(f"Searching for author with ID: {citing_author_id}")
+                citing_author = scholarly.search_author_id(citing_author_id)
+                if citing_author is None:
+                    print(f"[Warning!] Author with ID {citing_author_id} not found on attempt {attempt + 1}.")
+                    if attempt == max_retries - 1:
+                        print(f"[Error] Failed to find author with ID {citing_author_id} after {max_retries} attempts.")
+                    continue
+                
+                print(f"Author found: {citing_author.get('name', 'Name not available')}")
+                author_name = citing_author.get('name', 'Name not available')
+                
+                if 'affiliation' in citing_author:
+                    affiliation_parts = citing_author['affiliation'].split(',')
+                    if len(affiliation_parts) > 1:
+                        author_organization = affiliation_parts[-1].strip()
+                    else:
+                        author_organization = citing_author['affiliation'].strip()
+                    print(f"Extracted organization: {author_organization}")
+                    affiliations.append((author_name, citing_paper_title, cited_paper_title, author_organization))
+                else:
+                    print(f"No affiliation information found for author {author_name}")
+                
+                break  # Successfully processed this author, move to the next
+            except Exception as e:
+                print(f'[Warning!] Error searching for author with ID {citing_author_id} on attempt {attempt + 1}: {e}')
+                print(f'Exception type: {type(e).__name__}')
+                print(f'Exception args: {e.args}')
+                if attempt == max_retries - 1:
+                    print(f"[Error] Failed to process author with ID {citing_author_id} after {max_retries} attempts.")
     return affiliations
 
 def __country_aware_comma_split(string_list: List[str]) -> List[str]:
@@ -316,21 +412,52 @@ def __print_author_and_affiliation(author_paper_affiliation_tuple_list: List[Tup
         __author_affiliation_tuple_list.append((author_name, affiliation_name))
 
     # Take unique tuples.
-    __author_affiliation_tuple_list = list(set(__author_affiliation_tuple_list))
+    # __author_affiliation_tuple_list = list(set(__author_affiliation_tuple_list))
     for author_name, affiliation_name in sorted(__author_affiliation_tuple_list):
         print('Author: %s. Affiliation: %s.' % (author_name, affiliation_name))
     print('')
     return
 
 
-def save_cache(data: Any, fpath: str) -> None:
+def save_cache(data: List[Tuple[str, str, str]], fpath: str) -> None:
     os.makedirs(os.path.dirname(fpath), exist_ok=True)
-    with open(fpath, "wb") as fd:
-        pickle.dump(data, fd)
+    with open(fpath, "w", newline='', encoding='utf-8') as fd:
+        writer = csv.writer(fd)
+        writer.writerow(['source_title', 'citedby_url', 'citing_year', 'citing_title', 'citing_authors', 'citing_author_id', 'citing_url'])
+        for item in data:
+            author_ids, citing_paper_title, cited_paper_title = item
+            if isinstance(author_ids, list):
+                author_ids = ','.join(author_ids) if author_ids else "NA"
+            elif author_ids is None:
+                author_ids = "NA"
+            # Note: We're leaving some fields blank as we don't have this information in our current data structure
+            writer.writerow([cited_paper_title, '', '', citing_paper_title, '', author_ids, ''])
 
-def load_cache(fpath: str) -> Any:
-    with open(fpath, "rb") as fd:
-        return pickle.load(fd)
+def load_cache(fpath: str) -> List[Tuple[str, str, str]]:
+    data = []
+    with open(fpath, "r", encoding='utf-8') as fd:
+        reader = csv.reader(fd)
+        next(reader)  # Skip header
+        for row in reader:
+            cited_paper_title, author_ids, citing_paper_title = row
+            if author_ids == "NA":
+                author_ids = []
+            else:
+                author_ids = author_ids.split(',')
+            data.append((author_ids, citing_paper_title, cited_paper_title))
+    return data
+
+def load_cache_v2(fpath: str) -> List[Tuple[str, str, str]]:
+    data = []
+    df = pd.read_csv(fpath)
+    for _, row in df.iterrows():
+        cited_paper_title = row['source_title']
+        author_ids = row['citing_author_id'].split(',') if pd.notna(row['citing_author_id']) else []
+        author_ids = [aid.strip() for aid in author_ids if aid.strip()]  # Remove empty strings and whitespace
+        citing_paper_title = row['citing_title']
+        if author_ids:  # Only add to data if there are valid author IDs
+            data.append((author_ids, citing_paper_title, cited_paper_title))
+    return data
 
 def generate_citation_map(scholar_id: str,
                           output_path: str = 'citation_map.html',
@@ -340,7 +467,9 @@ def generate_citation_map(scholar_id: str,
                           num_processes: int = 16,
                           use_proxy: bool = False,
                           pin_colorful: bool = True,
-                          print_citing_affiliations: bool = True):
+                          print_citing_affiliations: bool = True,
+                          use_v2_cache: bool = False,
+                          v2_cache_path: str = None):
     '''
     Google Scholar Citation World Map.
 
@@ -377,6 +506,12 @@ def generate_citation_map(scholar_id: str,
     print_citing_affiliations: bool
         (default is True)
         If true, print the list of citing affiliations (affiliations of citing authors).
+    use_v2_cache: bool
+        (default is False)
+        If true, use the v2 cache loading function.
+    v2_cache_path: str
+        (default is None)
+        The path to the v2 cache file.
     '''
 
     if use_proxy:
@@ -386,11 +521,16 @@ def generate_citation_map(scholar_id: str,
         print('Using proxy.')
 
     if cache_folder is not None:
-        cache_path = os.path.join(cache_folder, scholar_id, 'all_citing_author_paper_tuple_list.pkl')
+        cache_path = os.path.join(cache_folder, scholar_id, 'all_citing_author_paper_tuple_list.csv')
     else:
         cache_path = None
 
-    if cache_path is None or not os.path.exists(cache_path):
+    if use_v2_cache and v2_cache_path:
+        print('Loading data from v2 cache.\n')
+        all_citing_author_paper_tuple_list = load_cache_v2(v2_cache_path)
+        print(f'Loaded from v2 cache: {v2_cache_path}.\n')
+        print(f'A total of {len(all_citing_author_paper_tuple_list)} citing authors loaded.\n')
+    elif cache_path is None or not os.path.exists(cache_path):
         print('No cache found for this author. Running from scratch.\n')
 
         # NOTE: Step 1. Find all publications of the given Google Scholar ID.
@@ -461,4 +601,5 @@ if __name__ == '__main__':
     scholar_id = '3rDjnykAAAAJ'
     generate_citation_map(scholar_id, output_path='citation_map.html', csv_output_path='citation_info.csv',
                           cache_folder='cache', affiliation_conservative=True, num_processes=16,
-                          use_proxy=False, pin_colorful=True, print_citing_affiliations=True)
+                          use_proxy=False, pin_colorful=True, print_citing_affiliations=True,
+                          use_v2_cache=False, v2_cache_path=None)
