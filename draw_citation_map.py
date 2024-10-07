@@ -141,6 +141,9 @@ def draw_citation_map(citation_info_file, output_file):
     # Dictionary to store the number of authors at each location
     location_count = {}
 
+    # Dictionary to store the highest cited author for each continent
+    continent_top_authors = {}
+
     # Process each citation and add markers
     for citation in tqdm(citations, desc="Adding markers to map"):
         latitude = citation.get('latitude', '')
@@ -159,7 +162,7 @@ def draw_citation_map(citation_info_file, output_file):
                 location_key = f"{latitude:.2f},{longitude:.2f}"  # Reduced precision for grouping
                 if location_key in location_count:
                     location_count[location_key] += 1
-                    offset = min(location_count[location_key], 20) * 0.05  # Increased spread
+                    offset = min(location_count[location_key], 20) * 0.04  # Increased spread
                 else:
                     location_count[location_key] = 1
                     offset = 0
@@ -183,7 +186,7 @@ def draw_citation_map(citation_info_file, output_file):
                 # Add marker to the cluster
                 folium.CircleMarker(
                     location=[latitude, longitude],
-                    radius=6,
+                    radius=4,
                     popup=folium.Popup(popup_text, max_width=300),
                     color=color,
                     fill=True,
@@ -191,8 +194,29 @@ def draw_citation_map(citation_info_file, output_file):
                     fillOpacity=0.7
                 ).add_to(marker_cluster)
 
+                # Update top author for the continent
+                if continent not in continent_top_authors or citation_count > continent_top_authors[continent]['citations']:
+                    continent_top_authors[continent] = {
+                        'author': author,
+                        'citations': citation_count,
+                        'affiliation': affiliation,
+                        'latitude': latitude,
+                        'longitude': longitude
+                    }
+
             except ValueError:
                 print(f"Invalid latitude or longitude for author: {author}")
+
+    # Add markers for top authors in each continent
+    for continent, author_data in continent_top_authors.items():
+        folium.Marker(
+            location=[author_data['latitude'], author_data['longitude']],
+            icon=folium.Icon(color='red', icon='info-sign'),
+            popup=f"<b>Top Author in {continent}</b><br>"
+                  f"Name: {author_data['author']}<br>"
+                  f"Citations: {author_data['citations']}<br>"
+                  f"Affiliation: {author_data['affiliation']}"
+        ).add_to(m)
 
     # Add a custom legend
     legend_html = '''
