@@ -6,6 +6,8 @@ from tqdm import tqdm
 import time
 import random
 import os
+import pycountry_convert as pc
+from folium.plugins import MarkerCluster
 
 def get_coordinates(geolocator, location):
     max_attempts = 3
@@ -88,6 +90,21 @@ def update_citation_info_with_location(citation_info_file):
     print(f"Updated citation info with location information saved to: {new_file}")
     return new_file
 
+def get_continent(country_name):
+    try:
+        country_alpha2 = pc.country_name_to_country_alpha2(country_name)
+        country_continent_code = pc.country_alpha2_to_continent_code(country_alpha2)
+        continent_name = pc.convert_continent_code_to_continent_name(country_continent_code)
+        return continent_name
+    except:
+        return "Unknown"
+
+def get_citation_count(x):
+    try:
+        return int(x.get('citations', 0))
+    except ValueError:
+        return 0  # Return 0 for 'NA' or any non-numeric value
+
 def draw_citation_map(citation_info_file, output_file):
     # Read the citation info file
     citations = []
@@ -97,62 +114,90 @@ def draw_citation_map(citation_info_file, output_file):
             citations.append(row)
 
     # Create a map centered on the world
-    m = folium.Map(location=[0, 0], zoom_start=2)
+    m = folium.Map(location=[20, 0], zoom_start=2, tiles='CartoDB positron')
 
-    # Define colors for pins
-    colors = ['red', 'blue', 'green', 'purple', 'orange', 'darkred',
-              'lightred', 'beige', 'darkblue', 'darkgreen', 'cadetblue',
-              'darkpurple', 'pink', 'lightblue', 'lightgreen',
-              'gray', 'black', 'lightgray']
+    # Define color schemes for each continent
+    continent_colors = {
+        'Africa': '#CD5C5C',
+        'Europe': '#006400',
+        'Asia': '#8B008B',
+        'North America': '#0000CD',
+        'South America': '#8B4513',
+        'Oceania': '#008080',
+        'Antarctica': '#708090',
+        'Unknown': '#2F4F4F'
+    }
 
-    # Create a dictionary to store affiliations and their corresponding entries
-    affiliation_map = {}
+    # Create a MarkerCluster
+    marker_cluster = MarkerCluster().add_to(m)
 
-    # Process each citation and add to affiliation_map
-    for citation in tqdm(citations, desc="Processing citations"):
-        affiliation = citation['affiliation']
+    # Process each citation and add markers
+    for citation in tqdm(citations, desc="Adding markers to map"):
         latitude = citation.get('latitude', '')
         longitude = citation.get('longitude', '')
+        country = citation.get('country', 'Unknown')
+        author = citation.get('citing author name', 'Unknown')
+        affiliation = citation.get('affiliation', 'Unknown')
+        citation_count = get_citation_count(citation)
         
         if latitude and longitude and latitude != 'N/A' and longitude != 'N/A':
             try:
-                float(latitude)
-                float(longitude)
-                if affiliation not in affiliation_map:
-                    affiliation_map[affiliation] = []
-                affiliation_map[affiliation].append(citation)
+                latitude = float(latitude)
+                longitude = float(longitude)
+                
+                continent = get_continent(country)
+                color = continent_colors.get(continent, continent_colors['Unknown'])
+                
+                # Create popup text
+                popup_text = f"<div style='font-family: Arial, sans-serif;'>"
+                popup_text += f"<h3 style='color: #333;'>{author}</h3>"
+                popup_text += f"<p><b>Affiliation:</b> {affiliation}<br>"
+                popup_text += f"<b>City:</b> {citation.get('city', 'N/A')}<br>"
+                popup_text += f"<b>State:</b> {citation.get('state', 'N/A')}<br>"
+                popup_text += f"<b>Country:</b> {country}<br>"
+                popup_text += f"<b>Citations:</b> {citation_count}</p>"
+                popup_text += "</div>"
+                
+                # Add marker to the cluster
+                folium.CircleMarker(
+                    location=[latitude, longitude],
+                    radius=6,
+                    popup=folium.Popup(popup_text, max_width=300),
+                    color=color,
+                    fill=True,
+                    fillColor=color,
+                    fillOpacity=0.7
+                ).add_to(marker_cluster)
+
             except ValueError:
-                print(f"Invalid latitude or longitude for affiliation: {affiliation}")
+                print(f"Invalid latitude or longitude for author: {author}")
 
-    # Add markers for each affiliation
-    for affiliation, citations in tqdm(affiliation_map.items(), desc="Adding markers to map"):
-        color = random.choice(colors)
-        
-        # Use the first citation's lat/long for the marker
-        try:
-            latitude = float(citations[0]['latitude'])
-            longitude = float(citations[0]['longitude'])
-        except ValueError:
-            print(f"Skipping affiliation due to invalid coordinates: {affiliation}")
-            continue
-        
-        # Create popup text
-        popup_text = f"<b>Affiliation:</b> {affiliation}<br>"
-        popup_text += f"<b>City:</b> {citations[0].get('city', 'N/A')}<br>"
-        popup_text += f"<b>State:</b> {citations[0].get('state', 'N/A')}<br>"
-        popup_text += f"<b>Country:</b> {citations[0].get('country', 'N/A')}<br><br>"
-        
-        for citation in citations:
-            popup_text += f"<b>Author:</b> {citation.get('citing author name', 'N/A')}<br>"
-            popup_text += f"<b>Citing Paper:</b> {citation.get('citing paper title', 'N/A')}<br>"
-            popup_text += f"<b>Cited Paper:</b> {citation.get('cited paper title', 'N/A')}<br><br>"
-
-        # Add marker to the map
-        folium.Marker(
-            location=[latitude, longitude],
-            popup=folium.Popup(popup_text, max_width=300),
-            icon=folium.Icon(color=color)
-        ).add_to(m)
+    # Add a custom legend
+    legend_html = '''
+    <div style="
+        position: fixed; 
+        top: 10px;
+        left: 50px;
+        width: 90%;
+        height: 40px;
+        z-index: 9999; 
+        font-size: 14px; 
+        background-color: rgba(255, 255, 255, 0.8);
+        padding: 10px;
+        border-radius: 5px;
+        box-shadow: 0 0 15px rgba(0,0,0,0.2);">
+        <div style="float: left; margin-right: 20px;"><strong>Legend:</strong></div>
+        <div style="float: left; margin-right: 15px;"><i class="fa fa-circle" style="color:#CD5C5C"></i> Africa</div>
+        <div style="float: left; margin-right: 15px;"><i class="fa fa-circle" style="color:#006400"></i> Europe</div>
+        <div style="float: left; margin-right: 15px;"><i class="fa fa-circle" style="color:#8B008B"></i> Asia</div>
+        <div style="float: left; margin-right: 15px;"><i class="fa fa-circle" style="color:#0000CD"></i> N. America</div>
+        <div style="float: left; margin-right: 15px;"><i class="fa fa-circle" style="color:#8B4513"></i> S. America</div>
+        <div style="float: left; margin-right: 15px;"><i class="fa fa-circle" style="color:#008080"></i> Oceania</div>
+        <div style="float: left; margin-right: 15px;"><i class="fa fa-circle" style="color:#708090"></i> Antarctica</div>
+        <div style="float: left; margin-right: 15px;"><i class="fa fa-circle" style="color:#2F4F4F"></i> Unknown</div>
+    </div>
+    '''
+    m.get_root().html.add_child(folium.Element(legend_html))
 
     # Save the map
     m.save(output_file)
