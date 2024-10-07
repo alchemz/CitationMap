@@ -128,8 +128,15 @@ def draw_citation_map(citation_info_file, output_file):
         'Unknown': '#2F4F4F'
     }
 
-    # Create a MarkerCluster
-    marker_cluster = MarkerCluster().add_to(m)
+    # Create a MarkerCluster with custom options
+    marker_cluster = MarkerCluster(
+        options={
+            'maxClusterRadius': 15,  # Reduce cluster radius
+            'disableClusteringAtZoom': 4,  # Disable clustering at higher zoom levels
+            'spiderfyOnMaxZoom': False,  # Disable spiderfy effect
+            'showCoverageOnHover': False,  # Don't show bounds of clusters on hover
+        }
+    ).add_to(m)
 
     # Dictionary to store the number of authors at each location
     location_count = {}
@@ -148,11 +155,11 @@ def draw_citation_map(citation_info_file, output_file):
                 latitude = float(latitude)
                 longitude = float(longitude)
                 
-                # Add a small random offset to spread out markers from the same location
-                location_key = f"{latitude:.4f},{longitude:.4f}"
+                # Add a larger random offset to spread out markers from the same location
+                location_key = f"{latitude:.2f},{longitude:.2f}"  # Reduced precision for grouping
                 if location_key in location_count:
                     location_count[location_key] += 1
-                    offset = 0.01 * location_count[location_key]  # Increase offset for each additional author
+                    offset = min(location_count[location_key], 20) * 0.05  # Increased spread
                 else:
                     location_count[location_key] = 1
                     offset = 0
