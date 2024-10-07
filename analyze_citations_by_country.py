@@ -5,18 +5,21 @@ from plotly.subplots import make_subplots
 import os
 
 def analyze_citations_by_country(file_path):
-    countries = []
+    country_authors = {}
     
     with open(file_path, 'r') as csvfile:
         reader = csv.DictReader(csvfile)
         for row in reader:
             country = row['country'].strip()
-            if country:
-                countries.append(country)
+            author = row['citing author name'].strip()
+            if country and author:
+                if country not in country_authors:
+                    country_authors[country] = set()
+                country_authors[country].add(author)
 
-    country_counts = Counter(countries)
+    country_counts = {country: len(authors) for country, authors in country_authors.items()}
     
-    # Separate countries with 4 or more citations and those with less
+    # Separate countries with 4 or more unique authors and those with less
     main_countries = {k: v for k, v in country_counts.items() if v >= 4}
     small_countries = {k: v for k, v in country_counts.items() if v < 4}
     
@@ -32,8 +35,8 @@ def analyze_citations_by_country(file_path):
     # Create subplots
     fig = make_subplots(rows=1, cols=2, specs=[[{'type':'domain'}, {'type':'table'}]],
                         column_widths=[0.7, 0.3],
-                        subplot_titles=['Countries with 4 or More Citations', 
-                                        'Countries with Less Than 4 Citations'])
+                        subplot_titles=['Countries with 4 or More Unique Authors', 
+                                        'Countries with Less Than 4 Unique Authors'])
 
     # Add sunburst chart
     fig.add_trace(go.Sunburst(
@@ -41,7 +44,7 @@ def analyze_citations_by_country(file_path):
         parents=parents,
         values=values,
         branchvalues="total",
-        hovertemplate='<b>%{label}</b><br>Citations: %{value}<br>Percentage: %{percentRoot:.1%}<extra></extra>',
+        hovertemplate='<b>%{label}</b><br>Unique Authors: %{value}<br>Percentage: %{percentRoot:.1%}<extra></extra>',
         texttemplate='%{label}<br>%{percentRoot:.1%}<br>(%{value})',
         textfont=dict(size=10),
         name=""
@@ -49,7 +52,7 @@ def analyze_citations_by_country(file_path):
 
     # Add table
     fig.add_trace(go.Table(
-        header=dict(values=['Country', 'Citations'],
+        header=dict(values=['Country', 'Unique Authors'],
                     fill_color='rgba(0, 128, 128, 0.7)',
                     align='left',
                     font=dict(color='white', size=12)),
@@ -62,7 +65,6 @@ def analyze_citations_by_country(file_path):
 
     # Update layout
     fig.update_layout(
-        # title_text="Distribution of Citing Authors by Country",
         title_font_size=24,
         title_x=0.5,
         title_y=0.95,
@@ -70,8 +72,8 @@ def analyze_citations_by_country(file_path):
         height=900,
         width=1400,
         annotations=[
-            dict(text='Countries with 4 or More Citations', x=0.25, y=1.02, font_size=16, showarrow=False),
-            dict(text='Countries with Less Than 4 Citations', x=0.85, y=1.02, font_size=16, showarrow=False)
+            dict(text='Countries with 4 or More Unique Authors', x=0.25, y=1.02, font_size=16, showarrow=False),
+            dict(text='Countries with Less Than 4 Unique Authors', x=0.85, y=1.02, font_size=16, showarrow=False)
         ],
         paper_bgcolor='rgba(240,248,255,0.7)',
         plot_bgcolor='rgba(240,248,255,0.7)',
@@ -84,16 +86,17 @@ def analyze_citations_by_country(file_path):
     )
 
     # Save as static image
-    output_path = os.path.join(os.path.dirname(file_path), "all_citing_authors_distribution.png")
+    output_path = os.path.join(os.path.dirname(file_path), "unique_authors_distribution.png")
     fig.write_image(output_path, scale=3, width=1400, height=900)
     print(f"Plot saved as: {output_path}")
 
     # Results
-    total_papers = sum(country_counts.values())
+    total_authors = sum(country_counts.values())
     print(f"Total number of unique countries: {len(country_counts)}")
-    print("\nDistribution of citing authors by country:")
+    print(f"Total number of unique authors: {total_authors}")
+    print("\nDistribution of unique authors by country:")
     for country, count in sorted(country_counts.items(), key=lambda x: x[1], reverse=True):
-        print(f"{country}: {count} ({count/total_papers*100:.1f}%)")
+        print(f"{country}: {count} ({count/total_authors*100:.1f}%)")
 
 if __name__ == "__main__":
     file_path = "/Users/lilyzhang/Desktop/Demo/CitationMap/status_checked/citation_info_filled_sorted.csv"
