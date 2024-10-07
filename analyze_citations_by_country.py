@@ -46,7 +46,7 @@ def analyze_citations_by_country(file_path):
         branchvalues="total",
         hovertemplate='<b>%{label}</b><br>Unique Authors: %{value}<br>Percentage: %{percentRoot:.1%}<extra></extra>',
         texttemplate='%{label}<br>%{percentRoot:.1%}<br>(%{value})',
-        textfont=dict(size=10),
+        textfont=dict(size=14),  # Increased font size
         name=""
     ), 1, 1)
 
@@ -55,29 +55,30 @@ def analyze_citations_by_country(file_path):
         header=dict(values=['Country', 'Unique Authors'],
                     fill_color='rgba(0, 128, 128, 0.7)',
                     align='left',
-                    font=dict(color='white', size=12)),
+                    font=dict(color='white', size=16)),  # Increased font size
         cells=dict(values=[[country for country, _ in sorted_small_countries],
                            [count for _, count in sorted_small_countries]],
                    fill_color='rgba(240, 248, 255, 0.6)',
                    align='left',
-                   font=dict(color='black', size=11))
+                   font=dict(color='black', size=14))  # Increased font size
     ), 1, 2)
 
     # Update layout
     fig.update_layout(
-        title_font_size=24,
+        title_text="Distribution of Unique Citing Authors by Country",
+        title_font_size=28,  # Increased title font size
         title_x=0.5,
-        title_y=0.95,
+        title_y=0.98,  # Moved title higher
         showlegend=False,
-        height=900,
-        width=1400,
+        height=900,  # Increased height
+        width=1200,
         annotations=[
-            dict(text='Countries with 4 or More Unique Authors', x=0.25, y=1.02, font_size=16, showarrow=False),
-            dict(text='Countries with Less Than 4 Unique Authors', x=0.85, y=1.02, font_size=16, showarrow=False)
+            dict(text='Countries with 4 or More Unique Authors', x=0.3, y=1.03, font_size=20, showarrow=False),
+            dict(text='Countries with Less Than 4 Authors', x=0.85, y=1.03, font_size=20, showarrow=False)
         ],
         paper_bgcolor='rgba(240,248,255,0.7)',
         plot_bgcolor='rgba(240,248,255,0.7)',
-        margin=dict(t=80, l=10, r=10, b=10)
+        margin=dict(t=150, l=10, r=10, b=10)  # Increased top margin
     )
 
     # Update sunburst specific layout
@@ -87,7 +88,7 @@ def analyze_citations_by_country(file_path):
 
     # Save as static image
     output_path = os.path.join(os.path.dirname(file_path), "unique_authors_distribution.png")
-    fig.write_image(output_path, scale=3, width=1400, height=900)
+    fig.write_image(output_path, scale=3, width=1200, height=900)
     print(f"Plot saved as: {output_path}")
 
     # Results
