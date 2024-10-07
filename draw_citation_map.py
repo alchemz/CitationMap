@@ -131,6 +131,9 @@ def draw_citation_map(citation_info_file, output_file):
     # Create a MarkerCluster
     marker_cluster = MarkerCluster().add_to(m)
 
+    # Dictionary to store the number of authors at each location
+    location_count = {}
+
     # Process each citation and add markers
     for citation in tqdm(citations, desc="Adding markers to map"):
         latitude = citation.get('latitude', '')
@@ -144,6 +147,18 @@ def draw_citation_map(citation_info_file, output_file):
             try:
                 latitude = float(latitude)
                 longitude = float(longitude)
+                
+                # Add a small random offset to spread out markers from the same location
+                location_key = f"{latitude:.4f},{longitude:.4f}"
+                if location_key in location_count:
+                    location_count[location_key] += 1
+                    offset = 0.01 * location_count[location_key]  # Increase offset for each additional author
+                else:
+                    location_count[location_key] = 1
+                    offset = 0
+
+                latitude += random.uniform(-offset, offset)
+                longitude += random.uniform(-offset, offset)
                 
                 continent = get_continent(country)
                 color = continent_colors.get(continent, continent_colors['Unknown'])
