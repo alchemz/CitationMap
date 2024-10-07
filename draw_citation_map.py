@@ -38,11 +38,18 @@ def update_citation_info_with_location(citation_info_file):
     with open(citation_info_file, 'r', newline='', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         fieldnames = reader.fieldnames
+        total_rows = sum(1 for row in reader)  # Count total number of rows
+        f.seek(0)  # Reset file pointer
+        reader = csv.DictReader(f)  # Recreate reader
         
-        for row in tqdm(reader, desc="Updating location information"):
+        for row in tqdm(reader, total=total_rows, desc="Updating location information"):
             affiliation = row['affiliation']
             
-            if affiliation and affiliation.strip() != "":
+            # Check if latitude is already present
+            if 'latitude' in row and row['latitude'] and row['latitude'] != 'N/A':
+                # If latitude is present, keep existing location information
+                updated_citations.append(row)
+            elif affiliation and affiliation.strip() != "":
                 location_info, county, city, state, country = get_coordinates(geolocator, affiliation)
                 
                 row['county'] = county or row.get('county', 'N/A')
@@ -53,20 +60,20 @@ def update_citation_info_with_location(citation_info_file):
                 if location_info:
                     row['latitude'] = location_info.latitude
                     row['longitude'] = location_info.longitude
+                else:
+                    row['latitude'] = row.get('latitude', 'N/A')
+                    row['longitude'] = row.get('longitude', 'N/A')
                 
-                # print(f"\nAffiliation: {affiliation}")
-                # print(f"Updated City: {row['city']}")
-                # print(f"Updated State: {row['state']}")
-                # print(f"Updated Country: {row['country']}")
-                # print("---")
+                updated_citations.append(row)
+                time.sleep(random.uniform(0.5, 1.5))  # Add a small delay to avoid overwhelming the geocoding service
             else:
                 row['county'] = row.get('county', 'N/A')
                 row['city'] = row.get('city', 'N/A')
                 row['state'] = row.get('state', 'N/A')
                 row['country'] = row.get('country', 'N/A')
-            
-            updated_citations.append(row)
-            time.sleep(random.uniform(0.5, 1.5))  # Add a small delay to avoid overwhelming the geocoding service
+                row['latitude'] = row.get('latitude', 'N/A')
+                row['longitude'] = row.get('longitude', 'N/A')
+                updated_citations.append(row)
 
     # Create a new file name
     file_name, file_extension = os.path.splitext(citation_info_file)
@@ -82,9 +89,6 @@ def update_citation_info_with_location(citation_info_file):
     return new_file
 
 def draw_citation_map(citation_info_file, output_file):
-    # Initialize geolocator
-    geolocator = Nominatim(user_agent="citation_mapper")
-
     # Read the citation info file
     citations = []
     with open(citation_info_file, 'r', newline='', encoding='utf-8') as f:
@@ -104,56 +108,51 @@ def draw_citation_map(citation_info_file, output_file):
     # Create a dictionary to store affiliations and their corresponding entries
     affiliation_map = {}
 
-    # Process each citation and add markers to the map
+    # Process each citation and add to affiliation_map
     for citation in tqdm(citations, desc="Processing citations"):
         affiliation = citation['affiliation']
+        latitude = citation.get('latitude', '')
+        longitude = citation.get('longitude', '')
         
-        # Skip if no affiliation information
-        if not affiliation or affiliation.strip() == "":
-            continue
-
-        # Get coordinates and location info
-        location_info, county, city, state, country = get_coordinates(geolocator, affiliation)
-        
-        # Print affiliation and retrieved location information
-        # print(f"Affiliation: {affiliation}")
-        # print(f"Retrieved City: {city or 'N/A'}")
-        # print(f"Retrieved State: {state or 'N/A'}")
-        # print(f"Retrieved Country: {country or 'N/A'}")
-        # print("---")
-
-        if location_info:
-            # Add the citation to the affiliation_map
-            if affiliation not in affiliation_map:
-                affiliation_map[affiliation] = []
-            affiliation_map[affiliation].append(citation)
+        if latitude and longitude and latitude != 'N/A' and longitude != 'N/A':
+            try:
+                float(latitude)
+                float(longitude)
+                if affiliation not in affiliation_map:
+                    affiliation_map[affiliation] = []
+                affiliation_map[affiliation].append(citation)
+            except ValueError:
+                print(f"Invalid latitude or longitude for affiliation: {affiliation}")
 
     # Add markers for each affiliation
-    for affiliation, citations in affiliation_map.items():
+    for affiliation, citations in tqdm(affiliation_map.items(), desc="Adding markers to map"):
         color = random.choice(colors)
-        location_info, county, city, state, country = get_coordinates(geolocator, affiliation)
         
-        if location_info:
-            # Create popup text
-            popup_text = f"<b>Affiliation:</b> {affiliation}<br>"
-            popup_text += f"<b>City:</b> {city or 'N/A'}<br>"
-            popup_text += f"<b>State:</b> {state or 'N/A'}<br>"
-            popup_text += f"<b>Country:</b> {country or 'N/A'}<br><br>"
-            
-            for citation in citations:
-                popup_text += f"<b>Author:</b> {citation['citing author name']}<br>"
-                popup_text += f"<b>Citing Paper:</b> {citation['citing paper title']}<br>"
-                popup_text += f"<b>Cited Paper:</b> {citation['cited paper title']}<br><br>"
+        # Use the first citation's lat/long for the marker
+        try:
+            latitude = float(citations[0]['latitude'])
+            longitude = float(citations[0]['longitude'])
+        except ValueError:
+            print(f"Skipping affiliation due to invalid coordinates: {affiliation}")
+            continue
+        
+        # Create popup text
+        popup_text = f"<b>Affiliation:</b> {affiliation}<br>"
+        popup_text += f"<b>City:</b> {citations[0].get('city', 'N/A')}<br>"
+        popup_text += f"<b>State:</b> {citations[0].get('state', 'N/A')}<br>"
+        popup_text += f"<b>Country:</b> {citations[0].get('country', 'N/A')}<br><br>"
+        
+        for citation in citations:
+            popup_text += f"<b>Author:</b> {citation.get('citing author name', 'N/A')}<br>"
+            popup_text += f"<b>Citing Paper:</b> {citation.get('citing paper title', 'N/A')}<br>"
+            popup_text += f"<b>Cited Paper:</b> {citation.get('cited paper title', 'N/A')}<br><br>"
 
-            # Add marker to the map
-            folium.Marker(
-                location=[location_info.latitude, location_info.longitude],
-                popup=folium.Popup(popup_text, max_width=300),
-                icon=folium.Icon(color=color)
-            ).add_to(m)
-
-        # Add a small delay to avoid overwhelming the geocoding service
-        time.sleep(random.uniform(0.5, 1.5))
+        # Add marker to the map
+        folium.Marker(
+            location=[latitude, longitude],
+            popup=folium.Popup(popup_text, max_width=300),
+            icon=folium.Icon(color=color)
+        ).add_to(m)
 
     # Save the map
     m.save(output_file)
