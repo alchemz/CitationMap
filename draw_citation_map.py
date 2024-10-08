@@ -251,7 +251,7 @@ def draw_citation_map(citation_info_file, output_file):
 
 if __name__ == "__main__":
     # citation_info_file = '/Users/lilyzhang/Desktop/Demo/CitationMap/status_checked/citation_info_updated.csv'
-    citation_info_file = '/Users/lilyzhang/Desktop/Demo/CitationMap/status_checked/citation_info_filled_sorted.csv'
+    citation_info_file = '/Users/lilyzhang/Desktop/Demo/CitationMap/status_checked/citation_info_filled_sorted_corrected.csv'
     output_file = '/Users/lilyzhang/Desktop/Demo/CitationMap/citation_map.html'
     
     # Update citation info with location information
