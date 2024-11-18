@@ -50,10 +50,19 @@ def search_paper(paper_title, max_retries=3):
                 # Filter out empty strings
                 authors = [author for author in authors if author.strip()]
                 
+                # Get Google Scholar URL
+                scholar_url = best_match.get('pub_url', '')
+                if not scholar_url:
+                    # Construct URL from paper ID if available
+                    pub_id = best_match.get('pub_id', '')
+                    if pub_id:
+                        scholar_url = f"https://scholar.google.com/citations?view_op=view_citation&citation_for_view={pub_id}"
+                
                 return {
                     'title': best_match['bib']['title'],
                     'authors': '; '.join(authors),
-                    'author_ids': '; '.join(best_match.get('author_id', ['N/A']))
+                    'author_ids': '; '.join(best_match.get('author_id', ['N/A'])),
+                    'scholar_url': scholar_url
                 }
             return None
 
@@ -89,17 +98,20 @@ def process_judged_papers(input_csv, output_csv):
             print("Found paper information:")
             print(f"Authors: {paper_info['authors']}")
             print(f"Author IDs: {paper_info['author_ids']}")
+            print(f"Scholar URL: {paper_info['scholar_url']}")
             results.append({
                 'paper_title': paper['paper_title'],
                 'authors': paper_info['authors'],
-                'author_ids': paper_info['author_ids']
+                'author_ids': paper_info['author_ids'],
+                'scholar_url': paper_info['scholar_url']
             })
         else:
             print("No results found. Recording with empty author information.")
             results.append({
                 'paper_title': paper['paper_title'],
                 'authors': '',
-                'author_ids': ''
+                'author_ids': '',
+                'scholar_url': ''
             })
         
         # Add delay to avoid rate limiting
@@ -107,7 +119,7 @@ def process_judged_papers(input_csv, output_csv):
 
     # Write results to output file
     with open(output_csv, 'w', newline='', encoding='utf-8') as f:
-        fieldnames = ['paper_title', 'authors', 'author_ids']
+        fieldnames = ['paper_title', 'authors', 'author_ids', 'scholar_url']
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(results)
