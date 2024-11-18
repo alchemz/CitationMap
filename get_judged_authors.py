@@ -79,6 +79,9 @@ def search_paper(paper_title, max_retries=3):
 def process_judged_papers(input_csv, output_csv):
     setup_scholarly()
     results = []
+    success_count = 0
+    fail_count = 0
+    failed_papers = []
 
     # Read input papers
     with open(input_csv, 'r', encoding='utf-8') as f:
@@ -105,6 +108,7 @@ def process_judged_papers(input_csv, output_csv):
                 'author_ids': paper_info['author_ids'],
                 'scholar_url': paper_info['scholar_url']
             })
+            success_count += 1
         else:
             print("No results found. Recording with empty author information.")
             results.append({
@@ -113,6 +117,8 @@ def process_judged_papers(input_csv, output_csv):
                 'author_ids': '',
                 'scholar_url': ''
             })
+            fail_count += 1
+            failed_papers.append(paper['paper_title'])
         
         # Add delay to avoid rate limiting
         time.sleep(random.uniform(2, 4))
@@ -124,6 +130,14 @@ def process_judged_papers(input_csv, output_csv):
         writer.writeheader()
         writer.writerows(results)
 
+    # Print summary
+    print("\n=== Processing Summary ===")
+    print(f"Total papers processed: {total_papers}")
+    print(f"Successfully retrieved: {success_count}")
+    print(f"Failed to retrieve: {fail_count}")
+    print("\nFailed papers:")
+    for paper in failed_papers:
+        print(f"- {paper}")
     print(f"\nResults have been saved to {output_csv}")
 
 if __name__ == "__main__":
