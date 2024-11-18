@@ -6,12 +6,16 @@ from fuzzywuzzy import fuzz
 import re
 
 def clean_author_name(name):
-    # First, join all characters back together
-    name = ''.join(name.split(';'))
-    # Then clean up extra spaces and punctuation
-    name = re.sub(r'\s+', ' ', name)
-    name = re.sub(r'[,]+', ',', name)
-    return name.strip(', ')
+    # Split the name into last and first parts
+    parts = name.strip().split(',', 1)
+    if len(parts) == 2:
+        last_name, first_name = parts
+        # Clean up any extra spaces
+        last_name = last_name.strip()
+        first_name = first_name.strip()
+        # Return in "First Last" format
+        return f"{first_name} {last_name}"
+    return name.strip()
 
 def setup_scholarly():
     pg = ProxyGenerator()
@@ -38,13 +42,17 @@ def search_paper(paper_title, max_retries=3):
 
             if best_match:
                 # Get raw author names and clean them
-                raw_authors = best_match['bib'].get('author', [])
-                authors = [clean_author_name(author) for author in raw_authors]
+                print(best_match['bib'])
+                raw_authors = best_match['bib'].get('author', '')
+                # Split the author string by 'and' and clean each name
+                author_list = [name.strip() for name in raw_authors.split(' and ')]
+                authors = [clean_author_name(author) for author in author_list]
                 # Filter out empty strings
                 authors = [author for author in authors if author.strip()]
                 
                 return {
                     'title': best_match['bib']['title'],
+                    'authors': '; '.join(authors),
                     'author_ids': '; '.join(best_match.get('author_id', ['N/A']))
                 }
             return None
@@ -79,15 +87,18 @@ def process_judged_papers(input_csv, output_csv):
         
         if paper_info:
             print("Found paper information:")
+            print(f"Authors: {paper_info['authors']}")
             print(f"Author IDs: {paper_info['author_ids']}")
             results.append({
                 'paper_title': paper['paper_title'],
+                'authors': paper_info['authors'],
                 'author_ids': paper_info['author_ids']
             })
         else:
             print("No results found. Recording with empty author information.")
             results.append({
                 'paper_title': paper['paper_title'],
+                'authors': '',
                 'author_ids': ''
             })
         
@@ -96,7 +107,7 @@ def process_judged_papers(input_csv, output_csv):
 
     # Write results to output file
     with open(output_csv, 'w', newline='', encoding='utf-8') as f:
-        fieldnames = ['paper_title', 'author_ids']
+        fieldnames = ['paper_title', 'authors', 'author_ids']
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(results)
