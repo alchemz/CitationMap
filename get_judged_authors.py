@@ -3,10 +3,18 @@ from scholarly import scholarly, ProxyGenerator
 import time
 import random
 from fuzzywuzzy import fuzz
+import re
+
+def clean_author_name(name):
+    # First, join all characters back together
+    name = ''.join(name.split(';'))
+    # Then clean up extra spaces and punctuation
+    name = re.sub(r'\s+', ' ', name)
+    name = re.sub(r'[,]+', ',', name)
+    return name.strip(', ')
 
 def setup_scholarly():
     pg = ProxyGenerator()
-    # You'll need to replace this with your own ScraperAPI key
     pg.ScraperAPI("78958c46d9c2b2d8729d25bbb48b7706")
     scholarly.use_proxy(pg)
 
@@ -29,9 +37,14 @@ def search_paper(paper_title, max_retries=3):
                     break
 
             if best_match:
+                # Get raw author names and clean them
+                raw_authors = best_match['bib'].get('author', [])
+                authors = [clean_author_name(author) for author in raw_authors]
+                # Filter out empty strings
+                authors = [author for author in authors if author.strip()]
+                
                 return {
                     'title': best_match['bib']['title'],
-                    'authors': '; '.join(best_match['bib'].get('author', [])),
                     'author_ids': '; '.join(best_match.get('author_id', ['N/A']))
                 }
             return None
@@ -66,18 +79,15 @@ def process_judged_papers(input_csv, output_csv):
         
         if paper_info:
             print("Found paper information:")
-            print(f"Authors: {paper_info['authors']}")
             print(f"Author IDs: {paper_info['author_ids']}")
             results.append({
                 'paper_title': paper['paper_title'],
-                'authors': paper_info['authors'],
                 'author_ids': paper_info['author_ids']
             })
         else:
             print("No results found. Recording with empty author information.")
             results.append({
                 'paper_title': paper['paper_title'],
-                'authors': '',
                 'author_ids': ''
             })
         
@@ -86,7 +96,7 @@ def process_judged_papers(input_csv, output_csv):
 
     # Write results to output file
     with open(output_csv, 'w', newline='', encoding='utf-8') as f:
-        fieldnames = ['paper_title', 'authors', 'author_ids']
+        fieldnames = ['paper_title', 'author_ids']
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(results)
@@ -94,7 +104,6 @@ def process_judged_papers(input_csv, output_csv):
     print(f"\nResults have been saved to {output_csv}")
 
 if __name__ == "__main__":
-    input_csv = "/Users/lilyzhang/Desktop/Demo/CitationMap/citation_map/judged_authors_short.csv"
-    output_csv = "/Users/lilyzhang/Desktop/Demo/CitationMap/citation_map/judged_authors_short_with_details.csv"
+    input_csv = "citation_map/judged_authors_short.csv"
+    output_csv = "citation_map/judged_authors_short_with_details.csv"
     process_judged_papers(input_csv, output_csv) 
-    
